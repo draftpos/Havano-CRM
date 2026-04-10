@@ -1,0 +1,58 @@
+@import 'frappe-ui/style.css';
+
+@layer components {
+  /* Nexus rail: global button / reka-ui triggers can override Tailwind text-*; force readable colors. */
+  .nexus-sidebar button.nexus-rail {
+    color: rgb(241 245 249) !important;
+  }
+  .nexus-sidebar button.nexus-rail svg {
+    color: rgb(241 245 249) !important;
+  }
+  .nexus-sidebar button.nexus-rail-active {
+    color: rgb(255 255 255) !important;
+  }
+  .nexus-sidebar button.nexus-rail-active svg {
+    color: rgb(255 255 255) !important;
+  }
+  .nexus-sidebar button.nexus-rail-danger {
+    color: rgb(252 165 165) !important;
+  }
+  .nexus-sidebar button.nexus-rail-danger svg {
+    color: rgb(252 165 165) !important;
+  }
+
+  /* Collapsible group labels (Overview / Sales / Workspace, etc.) */
+  .nexus-sidebar .nexus-sidebar-section {
+    color: rgb(226 232 240) !important;
+  }
+  .nexus-sidebar .nexus-sidebar-section svg {
+    color: rgb(203 213 225) !important;
+  }
+  .nexus-sidebar .nexus-sidebar-section:hover {
+    color: rgb(241 245 249) !important;
+  }
+  .nexus-sidebar .nexus-sidebar-section:hover svg {
+    color: rgb(226 232 240) !important;
+  }
+
+  .prose-f {
+    @apply break-all
+			max-w-none
+			prose
+			prose-code:break-all
+			prose-code:whitespace-pre-wrap
+			prose-img:border
+			prose-img:rounded-lg
+			prose-sm
+			prose-table:table-fixed
+			prose-td:border
+			prose-td:border-outline-gray-2
+			prose-td:p-2
+			prose-td:relative
+			prose-th:bg-surface-gray-2
+			prose-th:border
+			prose-th:border-outline-gray-2
+			prose-th:p-2
+			prose-th:relative;
+  }
+}

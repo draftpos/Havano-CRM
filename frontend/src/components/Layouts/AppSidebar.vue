@@ -1,0 +1,523 @@
+<template>
+  <div
+    class="nexus-sidebar relative flex h-full flex-col justify-between text-slate-100 transition-all duration-300 ease-in-out"
+    :class="isSidebarCollapsed ? 'w-12' : 'w-[220px]'"
+  >
+    <div class="p-2">
+      <UserDropdown :isCollapsed="isSidebarCollapsed" />
+    </div>
+    <div class="flex-1 overflow-y-auto">
+      <div class="flex flex-col">
+        <SidebarLink
+          id="notifications-btn"
+          nexus
+          :label="__('Notifications')"
+          :icon="NotificationsIcon"
+          :isCollapsed="isSidebarCollapsed"
+          class="relative mx-2 my-[1.5px]"
+          @click="() => toggleNotificationPanel()"
+        >
+          <template #right>
+            <Badge
+              v-if="!isSidebarCollapsed && unreadNotificationsCount"
+              :label="unreadNotificationsCount"
+              variant="solid"
+              theme="red"
+              class="!min-w-[1.25rem] shrink-0 border-0 !px-1.5 !text-[11px] font-semibold"
+            />
+            <div
+              v-else-if="unreadNotificationsCount"
+              class="absolute -left-1.5 top-1 z-20 h-[5px] w-[5px] translate-x-6 translate-y-1 rounded-full bg-red-500 ring-1 ring-[#0f172a]"
+            />
+          </template>
+        </SidebarLink>
+      </div>
+      <div v-for="view in allViews" :key="view.name">
+        <div class="mx-2 my-1.5" />
+        <CollapsibleSection
+          :label="view.name"
+          :hideLabel="view.hideLabel"
+          :opened="view.opened"
+        >
+          <template #header="{ opened, hide, toggle }">
+            <div
+              v-if="!hide"
+              class="nexus-sidebar-section flex cursor-pointer items-center gap-1.5 rounded-md text-xs font-semibold uppercase tracking-wide !text-slate-200 transition-colors duration-200 ease-in-out"
+              :class="
+                isSidebarCollapsed
+                  ? 'h-0 overflow-hidden opacity-0'
+                  : 'mx-1 w-auto px-3 py-2 opacity-100 hover:bg-white/10'
+              "
+              @click="toggle()"
+            >
+              <FeatherIcon
+                name="chevron-right"
+                class="h-4 shrink-0 !text-slate-300 transition-transform duration-300 ease-in-out"
+                :class="{ 'rotate-90': opened }"
+              />
+              <span class="!text-slate-100">{{ __(view.name) }}</span>
+            </div>
+          </template>
+          <nav class="flex flex-col">
+            <SidebarLink
+              v-for="link in view.views"
+              :key="link.label"
+              nexus
+              :icon="link.icon"
+              :label="__(link.label)"
+              :to="link.to"
+              :isCollapsed="isSidebarCollapsed"
+              class="mx-2 my-[1.5px]"
+            />
+          </nav>
+        </CollapsibleSection>
+      </div>
+    </div>
+    <div class="m-2 flex flex-col gap-1">
+      <div class="flex flex-col gap-2 mb-1">
+        <SignupBanner
+          v-if="isDemoSite"
+          :isSidebarCollapsed="isSidebarCollapsed"
+          :afterSignup="() => capture('signup_from_demo_site')"
+        />
+        <TrialBanner
+          v-if="isFCSite"
+          :isSidebarCollapsed="isSidebarCollapsed"
+          :afterUpgrade="() => capture('upgrade_plan_from_trial_banner')"
+        />
+        <GettingStartedBanner
+          v-if="!isOnboardingStepsCompleted"
+          :isSidebarCollapsed="isSidebarCollapsed"
+        />
+      </div>
+      <SidebarLink
+        v-if="isManager() && isDemoDataCreated"
+        nexus
+        nexus-tone="danger"
+        :label="__('Clear Demo Data')"
+        :isCollapsed="isSidebarCollapsed"
+        @click="() => clearDemoData()"
+      >
+        <template #icon>
+          <BrushCleaningIcon class="h-4 w-4 text-red-300" />
+        </template>
+      </SidebarLink>
+      <SidebarLink
+        v-if="isOnboardingStepsCompleted"
+        nexus
+        :label="__('Help')"
+        :isCollapsed="isSidebarCollapsed"
+        @click="
+          () => {
+            showHelpModal = minimize ? true : !showHelpModal
+            minimize = !showHelpModal
+          }
+        "
+      >
+        <template #icon>
+          <HelpIcon class="h-4 w-4 text-slate-100" />
+        </template>
+      </SidebarLink>
+      <SidebarLink
+        nexus
+        :label="isSidebarCollapsed ? __('Expand') : __('Collapse')"
+        :isCollapsed="isSidebarCollapsed"
+        class=""
+        @click="isSidebarCollapsed = !isSidebarCollapsed"
+      >
+        <template #icon>
+          <span class="grid h-4 w-4 flex-shrink-0 place-items-center">
+            <CollapseSidebar
+              class="h-4 w-4 text-slate-200 duration-300 ease-in-out"
+              :class="{ '[transform:rotateY(180deg)]': isSidebarCollapsed }"
+            />
+          </span>
+        </template>
+      </SidebarLink>
+    </div>
+    <Notifications />
+    <Settings />
+    <HelpModal
+      v-if="showHelpModal"
+      v-model="showHelpModal"
+      v-model:articles="articles"
+      :logo="CRMLogo"
+      :afterSkip="(step) => capture('onboarding_step_skipped_' + step)"
+      :afterSkipAll="() => capture('onboarding_steps_skipped')"
+      :afterReset="(step) => capture('onboarding_step_reset_' + step)"
+      :afterResetAll="() => capture('onboarding_steps_reset')"
+      docsLink="https://docs.frappe.io/crm"
+    />
+    <IntermediateStepModal
+      v-model="showIntermediateModal"
+      :currentStep="currentStep"
+    />
+  </div>
+</template>
+
+<script setup>
+import BrushCleaningIcon from '~icons/lucide/brush-cleaning'
+import CRMLogo from '@/components/Icons/CRMLogo.vue'
+import InviteIcon from '@/components/Icons/InviteIcon.vue'
+import ConvertIcon from '@/components/Icons/ConvertIcon.vue'
+import CommentIcon from '@/components/Icons/CommentIcon.vue'
+import EmailIcon from '@/components/Icons/EmailIcon.vue'
+import StepsIcon from '@/components/Icons/StepsIcon.vue'
+import CollapsibleSection from '@/components/CollapsibleSection.vue'
+import UserDropdown from '@/components/UserDropdown.vue'
+import SquareAsterisk from '@/components/Icons/SquareAsterisk.vue'
+import LeadsIcon from '@/components/Icons/LeadsIcon.vue'
+import NoteIcon from '@/components/Icons/NoteIcon.vue'
+import TaskIcon from '@/components/Icons/TaskIcon.vue'
+import CollapseSidebar from '@/components/Icons/CollapseSidebar.vue'
+import NotificationsIcon from '@/components/Icons/NotificationsIcon.vue'
+import HelpIcon from '@/components/Icons/HelpIcon.vue'
+import SidebarLink from '@/components/SidebarLink.vue'
+import Notifications from '@/components/Notifications.vue'
+import Settings from '@/components/Settings/Settings.vue'
+import {
+  unreadNotificationsCount,
+  notificationsStore,
+} from '@/stores/notifications'
+import { usersStore } from '@/stores/users'
+import { sessionStore } from '@/stores/session'
+import { showSettings, activeSettingsPage } from '@/composables/settings'
+import { showChangePasswordModal } from '@/composables/modals'
+import { FeatherIcon, call } from 'frappe-ui'
+import {
+  SignupBanner,
+  TrialBanner,
+  HelpModal,
+  GettingStartedBanner,
+  useOnboarding,
+  showHelpModal,
+  minimize,
+  IntermediateStepModal,
+  useTelemetry,
+} from 'frappe-ui/frappe'
+import router from '@/router'
+import { useStorage } from '@vueuse/core'
+import { useDemoData } from '@/composables/demoData'
+import { useNexusAllViews } from '@/composables/nexusNav'
+import { ref, reactive, markRaw, onMounted, provide } from 'vue'
+
+const { toggle: toggleNotificationPanel } = notificationsStore()
+const { capture } = useTelemetry()
+const { clearDemoData, isDemoDataCreated } = useDemoData()
+
+const isSidebarCollapsed = useStorage('isSidebarCollapsed', false)
+
+const isFCSite = ref(window.is_fc_site)
+const isDemoSite = ref(window.is_demo_site)
+
+const allViews = useNexusAllViews()
+provide('nexusSidebar', true)
+
+// onboarding
+const { user } = sessionStore()
+const { users, isManager } = usersStore()
+const { isOnboardingStepsCompleted, setUp } = useOnboarding('frappecrm')
+
+async function getFirstLead() {
+  let firstLead = localStorage.getItem('firstLead' + user)
+  if (firstLead) return firstLead
+  return await call('havano_crm.api.onboarding.get_first_lead')
+}
+
+async function getFirstDeal() {
+  let firstDeal = localStorage.getItem('firstDeal' + user)
+  if (firstDeal) return firstDeal
+  return await call('havano_crm.api.onboarding.get_first_deal')
+}
+
+const showIntermediateModal = ref(false)
+const currentStep = ref({})
+
+const steps = reactive([
+  {
+    name: 'setup_your_password',
+    title: __('Setup your password'),
+    icon: markRaw(SquareAsterisk),
+    completed: false,
+    onClick: () => {
+      minimize.value = true
+      showChangePasswordModal.value = true
+      capture('onboarding_step_clicked_setup_password')
+    },
+  },
+  {
+    name: 'create_first_lead',
+    title: __('Create your first lead'),
+    icon: markRaw(LeadsIcon),
+    completed: false,
+    onClick: () => {
+      minimize.value = true
+      router.push({ name: 'Leads' })
+      capture('onboarding_step_clicked_create_first_lead')
+    },
+  },
+  {
+    name: 'invite_your_team',
+    title: __('Invite your team'),
+    icon: markRaw(InviteIcon),
+    completed: false,
+    onClick: () => {
+      minimize.value = true
+      showSettings.value = true
+      activeSettingsPage.value = 'Invite User'
+      capture('onboarding_step_clicked_invite_your_team')
+    },
+    condition: () => isManager(),
+  },
+  {
+    name: 'convert_lead_to_deal',
+    title: __('Convert lead to deal'),
+    icon: markRaw(ConvertIcon),
+    completed: false,
+    dependsOn: 'create_first_lead',
+    onClick: async () => {
+      minimize.value = true
+      capture('onboarding_step_clicked_convert_lead_to_deal')
+      currentStep.value = {
+        title: __('Convert lead to deal'),
+        buttonLabel: __('Convert'),
+        videoURL: '/assets/havano-crm/videos/convertToDeal.mov',
+        onClick: async () => {
+          showIntermediateModal.value = false
+          currentStep.value = {}
+
+          let lead = await getFirstLead()
+          if (lead) {
+            router.push({ name: 'Lead', params: { leadId: lead } })
+          } else {
+            router.push({ name: 'Leads' })
+          }
+        },
+      }
+      showIntermediateModal.value = true
+    },
+  },
+  {
+    name: 'create_first_task',
+    title: __('Create your first task'),
+    icon: markRaw(TaskIcon),
+    completed: false,
+    onClick: async () => {
+      minimize.value = true
+      let deal = await getFirstDeal()
+      capture('onboarding_step_clicked_create_first_task')
+
+      if (deal) {
+        router.push({
+          name: 'Deal',
+          params: { dealId: deal },
+          hash: '#todo',
+        })
+      } else {
+        router.push({ name: 'Tasks' })
+      }
+    },
+  },
+  {
+    name: 'create_first_note',
+    title: __('Create your first note'),
+    icon: markRaw(NoteIcon),
+    completed: false,
+    onClick: async () => {
+      minimize.value = true
+      let deal = await getFirstDeal()
+      capture('onboarding_step_clicked_create_first_note')
+
+      if (deal) {
+        router.push({
+          name: 'Deal',
+          params: { dealId: deal },
+          hash: '#notes',
+        })
+      } else {
+        router.push({ name: 'Notes' })
+      }
+    },
+  },
+  {
+    name: 'add_first_comment',
+    title: __('Add your first comment'),
+    icon: markRaw(CommentIcon),
+    completed: false,
+    dependsOn: 'create_first_lead',
+    onClick: async () => {
+      minimize.value = true
+      let deal = await getFirstDeal()
+      capture('onboarding_step_clicked_add_first_comment')
+
+      if (deal) {
+        router.push({
+          name: 'Deal',
+          params: { dealId: deal },
+          hash: '#comments',
+        })
+      } else {
+        router.push({ name: 'Leads' })
+      }
+    },
+  },
+  {
+    name: 'send_first_email',
+    title: __('Send email'),
+    icon: markRaw(EmailIcon),
+    completed: false,
+    dependsOn: 'create_first_lead',
+    onClick: async () => {
+      minimize.value = true
+      let deal = await getFirstDeal()
+      capture('onboarding_step_clicked_send_first_email')
+
+      if (deal) {
+        router.push({
+          name: 'Deal',
+          params: { dealId: deal },
+          hash: '#emails',
+        })
+      } else {
+        router.push({ name: 'Leads' })
+      }
+    },
+  },
+  {
+    name: 'change_deal_status',
+    title: __('Change deal status'),
+    icon: markRaw(StepsIcon),
+    completed: false,
+    dependsOn: 'convert_lead_to_deal',
+    onClick: async () => {
+      minimize.value = true
+      capture('onboarding_step_clicked_change_deal_status')
+
+      currentStep.value = {
+        title: __('Change deal status'),
+        buttonLabel: __('Change'),
+        videoURL: '/assets/havano-crm/videos/changeDealStatus.mov',
+        onClick: async () => {
+          showIntermediateModal.value = false
+          currentStep.value = {}
+
+          let deal = await getFirstDeal()
+          if (deal) {
+            router.push({
+              name: 'Deal',
+              params: { dealId: deal },
+              hash: '#activity',
+            })
+          } else {
+            router.push({ name: 'Leads' })
+          }
+        },
+      }
+      showIntermediateModal.value = true
+    },
+  },
+])
+
+onMounted(async () => {
+  await users.promise
+
+  const filteredSteps = steps.filter((step) => {
+    if (step.condition) {
+      return step.condition()
+    }
+    return true
+  })
+
+  setUp(filteredSteps)
+})
+
+// help center
+const articles = ref([
+  {
+    title: __('Introduction'),
+    opened: false,
+    subArticles: [
+      { name: 'introduction', title: __('Introduction') },
+      { name: 'setting-up', title: __('Setting Up') },
+    ],
+  },
+  {
+    title: __('Settings'),
+    opened: false,
+    subArticles: [
+      { name: 'profile', title: __('Profile') },
+      { name: 'custom-branding', title: __('Custom Branding') },
+      { name: 'home-actions', title: __('Home Actions') },
+      { name: 'invite-users', title: __('Invite Users') },
+    ],
+  },
+  {
+    title: __('Masters'),
+    opened: false,
+    subArticles: [
+      { name: 'lead', title: __('Lead') },
+      { name: 'deal', title: __('Deal') },
+      { name: 'contact', title: __('Contact') },
+      { name: 'organization', title: __('Organization') },
+      { name: 'note', title: __('Note') },
+      { name: 'task', title: __('Task') },
+      { name: 'call-log', title: __('Call Log') },
+      { name: 'email-template', title: __('Email Template') },
+    ],
+  },
+  {
+    title: __('Capturing Leads'),
+    opened: false,
+    subArticles: [{ name: 'web-form', title: __('Web Form') }],
+  },
+  {
+    title: __('Views'),
+    opened: false,
+    subArticles: [
+      { name: 'view', title: __('Saved View') },
+      { name: 'public-view', title: __('Public View') },
+      { name: 'pinned-view', title: __('Pinned View') },
+    ],
+  },
+  {
+    title: __('Other Features'),
+    opened: false,
+    subArticles: [
+      { name: 'email-communication', title: __('Email Communication') },
+      { name: 'comment', title: __('Comment') },
+      { name: 'data', title: __('Data') },
+      { name: 'service-level-agreement', title: __('Service Level Agreement') },
+      { name: 'assignment-rule', title: __('Assignment Rule') },
+      { name: 'notification', title: __('Notification') },
+    ],
+  },
+  {
+    title: __('Customization'),
+    opened: false,
+    subArticles: [
+      { name: 'custom-fields', title: __('Custom Fields') },
+      { name: 'custom-actions', title: __('Custom Actions') },
+      { name: 'custom-statuses', title: __('Custom Statuses') },
+      { name: 'custom-list-actions', title: __('Custom List Actions') },
+      { name: 'quick-entry-layout', title: __('Quick Entry Layout') },
+    ],
+  },
+  {
+    title: __('Integration'),
+    opened: false,
+    subArticles: [
+      { name: 'twilio', title: __('Twilio') },
+      { name: 'exotel', title: __('Exotel') },
+      { name: 'whatsapp', title: __('WhatsApp') },
+      { name: 'erpnext', title: __('ERPNext') },
+    ],
+  },
+  {
+    title: __('Frappe CRM mobile'),
+    opened: false,
+    subArticles: [
+      { name: 'mobile-app-installation', title: __('Mobile App Installation') },
+    ],
+  },
+])
+</script>
