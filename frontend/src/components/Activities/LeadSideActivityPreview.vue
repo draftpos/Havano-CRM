@@ -84,19 +84,24 @@
             <TaskIcon class="h-3.5 w-3.5" />
           </div>
           <div class="min-w-0 flex-1 cursor-pointer" @click="taskActions?.edit?.(item.task)">
-            <div class="text-ink-gray-8">
-              <span class="font-medium">{{ taskAssigneeName(item.task) }}</span>
-              {{ ' ' }}
-              <span class="text-ink-gray-6">{{ __('To-do') }}</span>
-              <span class="text-ink-gray-5"> · {{ __(item.task.status) }}</span>
-            </div>
             <div
               class="line-clamp-3 break-words leading-snug text-ink-gray-7"
             >
               {{ taskTitle(item.task) }}
             </div>
-            <div class="mt-0.5 text-xs text-ink-gray-5">
-              {{ __(timeAgo(item.task.modified || item.task.creation)) }}
+            <div class="mt-0.5 text-xs leading-snug text-ink-gray-6">
+              <span class="font-medium text-ink-gray-8">{{
+                taskAssigneeName(item.task)
+              }}</span>
+              <template v-if="previewTaskDueSegment(item.task)">
+                <span>. {{ previewTaskDueSegment(item.task) }}</span>
+              </template>
+              <template v-if="item.task.creation">
+                <span>. {{ __(timeAgo(item.task.creation)) }}</span>
+              </template>
+              <span class="text-ink-gray-5">
+                · {{ __('To-do') }} · {{ __(item.task.status) }}
+              </span>
             </div>
           </div>
           <div
@@ -150,7 +155,7 @@ import NoteIcon from '@/components/Icons/NoteIcon.vue'
 import TaskIcon from '@/components/Icons/TaskIcon.vue'
 import { timeAgo, formatDate } from '@/utils'
 import { usersStore } from '@/stores/users'
-import { Button, createResource } from 'frappe-ui'
+import { Button, createResource, dayjs } from 'frappe-ui'
 import { computed, markRaw, watch } from 'vue'
 
 const props = defineProps({
@@ -259,6 +264,26 @@ function taskAssigneeName(task) {
   const u = task.allocated_to
   if (!u) return __('Unassigned')
   return getUser(u).full_name || u
+}
+
+function previewTaskStatusGroup(status) {
+  if (!status) return 'todo'
+  const s = String(status)
+  if (['Done', 'Closed', 'Canceled', 'Cancelled'].includes(s)) return 'done'
+  return 'todo'
+}
+
+function previewTaskDueSegment(task) {
+  const d = task.date || task.due_date
+  if (!d) return ''
+  const formatted = dayjs(d).format('DD/MM/YYYY')
+  if (previewTaskStatusGroup(task.status) === 'done') return formatted
+  const due = dayjs(d).format('YYYY-MM-DD')
+  const today = dayjs().format('YYYY-MM-DD')
+  if (due < today) {
+    return `${formatted}(${__('overdue')})`
+  }
+  return formatted
 }
 
 function noteTitle(note) {

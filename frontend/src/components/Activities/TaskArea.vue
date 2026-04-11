@@ -29,14 +29,24 @@
               >
                 {{ task.priority || __('General') }}
               </span>
-              <span v-if="task.due_date" class="inline-flex items-center gap-1.5">
-                <CalendarIcon class="h-3.5 w-3.5 text-ink-gray-5" />
-                {{ formatDate(task.due_date, 'D MMMM YYYY') }}
-              </span>
             </div>
-            <div class="flex items-center gap-2 text-sm text-ink-gray-8">
-              <UserAvatar :user="task.assigned_to" size="xs" />
-              <span class="truncate">{{ getUser(task.assigned_to).full_name }}</span>
+            <div class="flex items-start gap-2 text-sm text-ink-gray-8">
+              <UserAvatar :user="taskAssigneeKey(task)" size="xs" class="mt-0.5" />
+              <div class="min-w-0 flex-1 leading-snug">
+                <span class="font-medium text-ink-gray-9">{{
+                  taskOwnerName(task)
+                }}</span>
+                <template v-if="taskDueSegment(task)">
+                  <span class="text-ink-gray-7">
+                    . {{ taskDueSegment(task) }}
+                  </span>
+                </template>
+                <template v-if="task.creation">
+                  <span class="text-ink-gray-6">
+                    . {{ __(timeAgo(task.creation)) }}
+                  </span>
+                </template>
+              </div>
             </div>
           </div>
           <div class="flex shrink-0 items-start gap-1 pt-0.5">
@@ -91,13 +101,12 @@
   </div>
 </template>
 <script setup>
-import CalendarIcon from '@/components/Icons/CalendarIcon.vue'
 import TaskStatusIcon from '@/components/Icons/TaskStatusIcon.vue'
 import UserAvatar from '@/components/UserAvatar.vue'
-import { formatDate, htmlToText, taskStatusOptions } from '@/utils'
+import { htmlToText, taskStatusOptions, timeAgo } from '@/utils'
 import { usersStore } from '@/stores/users'
 import { globalStore } from '@/stores/global'
-import { Dropdown } from 'frappe-ui'
+import { Dropdown, dayjs } from 'frappe-ui'
 import { computed } from 'vue'
 
 const props = defineProps({
@@ -136,6 +145,39 @@ function statusGroup(status) {
     return 'done'
   if (s === 'In Progress') return 'progress'
   return 'todo'
+}
+
+function taskAssigneeKey(task) {
+  return task.allocated_to || task.assigned_to || ''
+}
+
+function taskOwnerName(task) {
+  const k = taskAssigneeKey(task)
+  if (!k) return __('Unassigned')
+  return getUser(k).full_name || k
+}
+
+function taskDueDateRaw(task) {
+  return task.date || task.due_date || null
+}
+
+function taskIsOverdue(task) {
+  const d = taskDueDateRaw(task)
+  if (!d) return false
+  if (statusGroup(task.status) === 'done') return false
+  const due = dayjs(d).format('YYYY-MM-DD')
+  const today = dayjs().format('YYYY-MM-DD')
+  return due < today
+}
+
+function taskDueSegment(task) {
+  const d = taskDueDateRaw(task)
+  if (!d) return ''
+  const formatted = dayjs(d).format('DD/MM/YYYY')
+  if (taskIsOverdue(task)) {
+    return `${formatted}(${__('overdue')})`
+  }
+  return formatted
 }
 
 const groupedTasks = computed(() => {

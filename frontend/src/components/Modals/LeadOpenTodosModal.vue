@@ -27,11 +27,19 @@
               <div class="font-medium text-ink-gray-9">
                 {{ plainTitle(t.description) }}
               </div>
-              <div
-                class="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-ink-gray-6"
-              >
-                <span v-if="t.date">{{ formatDate(t.date, 'D MMM YYYY') }}</span>
-                <span v-if="t.priority">{{ __(t.priority) }}</span>
+              <div class="mt-1 text-xs leading-snug text-ink-gray-6">
+                <span class="font-medium text-ink-gray-8">{{
+                  assigneeLabel(t)
+                }}</span>
+                <template v-if="openTodoDueSegment(t)">
+                  <span>. {{ openTodoDueSegment(t) }}</span>
+                </template>
+                <template v-if="t.creation">
+                  <span>. {{ __(timeAgo(t.creation)) }}</span>
+                </template>
+                <template v-if="t.priority">
+                  <span>. {{ __(t.priority) }}</span>
+                </template>
               </div>
             </div>
             <div class="flex shrink-0 flex-wrap gap-2">
@@ -64,9 +72,12 @@
 
 <script setup>
 import LoadingIndicator from '@/components/Icons/LoadingIndicator.vue'
-import { htmlToText, formatDate } from '@/utils'
-import { Dialog, Button, call } from 'frappe-ui'
+import { htmlToText, timeAgo } from '@/utils'
+import { usersStore } from '@/stores/users'
+import { Dialog, Button, call, dayjs } from 'frappe-ui'
 import { ref, watch, computed } from 'vue'
+
+const { getUser } = usersStore()
 
 const props = defineProps({
   /** Reference document name (Lead or Opportunity). */
@@ -91,6 +102,23 @@ const emptyMessage = computed(() =>
 function plainTitle(html) {
   const s = htmlToText(html || '')
   return s || __('(no title)')
+}
+
+function assigneeLabel(t) {
+  const u = t.allocated_to
+  if (!u) return __('Unassigned')
+  return getUser(u).full_name || u
+}
+
+function openTodoDueSegment(t) {
+  if (!t.date) return ''
+  const formatted = dayjs(t.date).format('DD/MM/YYYY')
+  const due = dayjs(t.date).format('YYYY-MM-DD')
+  const today = dayjs().format('YYYY-MM-DD')
+  if (due < today) {
+    return `${formatted}(${__('overdue')})`
+  }
+  return formatted
 }
 
 async function load() {

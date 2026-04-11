@@ -1,2 +1,0 @@
-import{aW as i,ao as s,W as c,A as u}from"./index-530facac.js";const f=i("crm-organizations",()=>{let a=u({});const r=s(),n=c({url:"havano_crm.api.session.get_organizations",cache:"organizations",initialData:[],auto:!0,transform(o){for(let t of o)a[t.name]=t;return o},onError(o){o&&o.exc_type==="AuthenticationError"&&r.push("/login")}});function e(o){return a[o]}return{organizations:n,getOrganization:e}});export{f as o};
-//# sourceMappingURL=organizations-43698f2d.js.map
