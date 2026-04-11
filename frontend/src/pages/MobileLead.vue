@@ -51,6 +51,7 @@
         :actions="document.actions"
       />
       <Button
+        v-if="canConvertToDeal"
         :label="__('Convert')"
         variant="solid"
         @click="showConvertToDealModal = true"
@@ -187,6 +188,8 @@ const { triggerOnChange, assignees, document, scripts, error } = useDocument(
 )
 
 const doc = computed(() => document.doc || {})
+
+const canConvertToDeal = computed(() => doc.value?.status !== 'Converted')
 
 watch(error, (err) => {
   if (err) {

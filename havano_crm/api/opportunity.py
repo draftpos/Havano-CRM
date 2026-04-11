@@ -91,6 +91,30 @@ def _apply_opportunity_defaults(data: dict) -> None:
 
 
 @frappe.whitelist()
+def get_lead_convert_deal_defaults(lead: str):
+	"""Default Opportunity field values when converting a specific Lead (Series, From, Party, Company, etc.)."""
+	if not lead or not frappe.db.exists("Lead", lead):
+		frappe.throw(_("Lead not found"), frappe.DoesNotExistError)
+	frappe.has_permission("Lead", "read", lead, throw=True)
+	if frappe.db.get_value("Lead", lead, "status") == "Converted":
+		frappe.throw(_("This lead has already been converted"))
+	tmp = frappe.new_doc("Opportunity")
+	co = _default_company()
+	data = {
+		"naming_series": tmp.naming_series,
+		"opportunity_from": "Lead",
+		"party_name": lead,
+		"company": co,
+		"transaction_date": str(today()),
+	}
+	_apply_opportunity_defaults(data)
+	# Keep Lead linkage explicit after generic defaults
+	data["opportunity_from"] = "Lead"
+	data["party_name"] = lead
+	return data
+
+
+@frappe.whitelist()
 def get_create_deal_defaults():
 	"""Defaults for the create-deal modal (aligned with :func:`_apply_opportunity_defaults`)."""
 	co = _default_company()
@@ -128,6 +152,8 @@ def convert_lead_to_deal(lead, deal=None, existing_contact=None, existing_organi
 		frappe.throw(_("Lead is required"))
 	if not frappe.db.exists("Lead", lead):
 		frappe.throw(_("Lead not found"), frappe.DoesNotExistError)
+	if frappe.db.get_value("Lead", lead, "status") == "Converted":
+		frappe.throw(_("This lead has already been converted"))
 	frappe.has_permission("Lead", "write", lead, throw=True)
 	frappe.has_permission("Opportunity", "create", throw=True)
 

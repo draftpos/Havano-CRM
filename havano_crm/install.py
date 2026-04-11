@@ -24,10 +24,25 @@ NOTE_REFERENCE_FIELDS = {
 	]
 }
 
+LEAD_DEAL_SIZE_FIELDS = {
+	"Lead": [
+		{
+			"fieldname": "deal_size",
+			"fieldtype": "Currency",
+			"label": "Deal size",
+			"insert_after": "annual_revenue",
+		},
+	]
+}
+
 
 def ensure_note_reference_fields():
 	"""So NoteModal can persist links and get_linked_notes() can load them."""
 	create_custom_fields(NOTE_REFERENCE_FIELDS, update=True)
+
+
+def ensure_lead_deal_size_field():
+	create_custom_fields(LEAD_DEAL_SIZE_FIELDS, update=True)
 
 
 def before_install():
@@ -37,9 +52,11 @@ def before_install():
 
 def after_install():
 	ensure_note_reference_fields()
+	ensure_lead_deal_size_field()
 	frappe.db.commit()
 
 
 def after_migrate():
 	ensure_note_reference_fields()
+	ensure_lead_deal_size_field()
 	frappe.clear_cache()

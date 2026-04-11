@@ -20,7 +20,7 @@ def get_activities(name: str):
 
 
 def get_linked_events(reference_doctype: str, reference_name: str, limit: int = 40) -> list:
-	"""Calendar events linked via Event Participants to a Lead or Opportunity."""
+	"""Calendar events linked to a Lead or Opportunity (participants table and/or Event reference fields)."""
 	if not reference_doctype or not reference_name:
 		return []
 	if not frappe.db.exists("DocType", "Event"):
@@ -34,7 +34,7 @@ def get_linked_events(reference_doctype: str, reference_name: str, limit: int = 
 		limit = 1
 	if limit > 100:
 		limit = 100
-	parents = frappe.get_all(
+	from_participants = frappe.get_all(
 		"Event Participants",
 		filters={
 			"reference_doctype": reference_doctype,
@@ -42,13 +42,21 @@ def get_linked_events(reference_doctype: str, reference_name: str, limit: int = 
 			"parenttype": "Event",
 		},
 		pluck="parent",
-	)
-	parents = list(dict.fromkeys(parents))
-	if not parents:
+	) or []
+	from_event_ref = frappe.get_all(
+		"Event",
+		filters={
+			"reference_doctype": reference_doctype,
+			"reference_docname": reference_name,
+		},
+		pluck="name",
+	) or []
+	all_names = list(dict.fromkeys([*from_participants, *from_event_ref]))
+	if not all_names:
 		return []
 	rows = frappe.get_all(
 		"Event",
-		filters={"name": ("in", parents)},
+		filters={"name": ("in", all_names)},
 		fields=[
 			"name",
 			"subject",

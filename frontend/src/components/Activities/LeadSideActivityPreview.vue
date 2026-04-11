@@ -22,7 +22,7 @@
       <li
         v-for="item in previewItems"
         :key="itemKey(item)"
-        class="flex gap-2 rounded-md border border-transparent px-1 py-1 hover:border-slate-200/80 hover:bg-white"
+        class="flex items-start gap-2 rounded-md border border-transparent px-1 py-1 hover:border-slate-200/80 hover:bg-white"
       >
         <template v-if="item.kind === 'feed'">
           <div class="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center text-ink-gray-6">
@@ -44,14 +44,17 @@
             <CalendarIcon class="h-3.5 w-3.5" />
           </div>
           <div class="min-w-0 flex-1">
-            <div class="truncate text-ink-gray-8">
+            <div class="text-ink-gray-8">
               <span class="font-medium">{{ ownerName(item.event) }}</span>
               {{ ' ' }}
               <span class="text-ink-gray-6">{{ __('scheduled an event') }}</span>
-              {{ ' ' }}
-              <span class="text-ink-gray-7">— {{ truncEventSubject(item.event) }}</span>
             </div>
-            <div class="text-xs text-ink-gray-5">
+            <div
+              class="line-clamp-3 break-words leading-snug text-ink-gray-7"
+            >
+              {{ eventSubject(item.event) }}
+            </div>
+            <div class="mt-0.5 text-xs text-ink-gray-5">
               {{ eventWhenLabel(item.event) }}
             </div>
           </div>
@@ -61,14 +64,17 @@
             <NoteIcon class="h-3.5 w-3.5" />
           </div>
           <div class="min-w-0 flex-1">
-            <div class="truncate text-ink-gray-8">
+            <div class="text-ink-gray-8">
               <span class="font-medium">{{ noteOwnerName(item.note) }}</span>
               {{ ' ' }}
               <span class="text-ink-gray-6">{{ __('added a note') }}</span>
-              {{ ' ' }}
-              <span class="text-ink-gray-7">— {{ truncNoteTitle(item.note) }}</span>
             </div>
-            <div class="text-xs text-ink-gray-5">
+            <div
+              class="line-clamp-3 break-words leading-snug text-ink-gray-7"
+            >
+              {{ noteTitle(item.note) }}
+            </div>
+            <div class="mt-0.5 text-xs text-ink-gray-5">
               {{ __(timeAgo(item.note.modified || item.note.creation)) }}
             </div>
           </div>
@@ -78,15 +84,18 @@
             <TaskIcon class="h-3.5 w-3.5" />
           </div>
           <div class="min-w-0 flex-1 cursor-pointer" @click="taskActions?.edit?.(item.task)">
-            <div class="truncate text-ink-gray-8">
+            <div class="text-ink-gray-8">
               <span class="font-medium">{{ taskAssigneeName(item.task) }}</span>
               {{ ' ' }}
               <span class="text-ink-gray-6">{{ __('To-do') }}</span>
               <span class="text-ink-gray-5"> · {{ __(item.task.status) }}</span>
-              {{ ' ' }}
-              <span class="text-ink-gray-7">— {{ truncTaskTitle(item.task) }}</span>
             </div>
-            <div class="text-xs text-ink-gray-5">
+            <div
+              class="line-clamp-3 break-words leading-snug text-ink-gray-7"
+            >
+              {{ taskTitle(item.task) }}
+            </div>
+            <div class="mt-0.5 text-xs text-ink-gray-5">
               {{ __(timeAgo(item.task.modified || item.task.creation)) }}
             </div>
           </div>
@@ -252,24 +261,21 @@ function taskAssigneeName(task) {
   return getUser(u).full_name || u
 }
 
-function truncNoteTitle(note) {
+function noteTitle(note) {
   const t = (note.title || '').trim()
-  if (t) return t.length > 56 ? `${t.slice(0, 53)}…` : t
+  if (t) return t
   const plain = plainText(note.content)
-  if (!plain) return __('(no title)')
-  return plain.length > 56 ? `${plain.slice(0, 53)}…` : plain
+  return plain || __('(no title)')
 }
 
-function truncTaskTitle(task) {
+function taskTitle(task) {
   const plain = plainText(task.description)
-  if (plain) return plain.length > 60 ? `${plain.slice(0, 57)}…` : plain
-  return __('(no title)')
+  return plain || __('(no title)')
 }
 
-function truncEventSubject(ev) {
+function eventSubject(ev) {
   const t = (ev.subject || '').trim()
-  if (t) return t.length > 56 ? `${t.slice(0, 53)}…` : t
-  return __('(no title)')
+  return t || __('(no title)')
 }
 
 function eventWhenLabel(ev) {

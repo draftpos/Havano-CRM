@@ -312,6 +312,7 @@ import ViewControls from '@/components/ViewControls.vue'
 import { getMeta } from '@/stores/meta'
 import { globalStore } from '@/stores/global'
 import { usersStore } from '@/stores/users'
+import { organizationsStore } from '@/stores/organizations'
 import { statusesStore } from '@/stores/statuses'
 import { callEnabled } from '@/composables/settings'
 import { formatDate, timeAgo, website, formatTime } from '@/utils'
@@ -323,6 +324,7 @@ const { getFormattedPercent, getFormattedFloat, getFormattedCurrency } =
   getMeta('Lead')
 const { makeCall } = globalStore()
 const { getUser } = usersStore()
+const { getOrganization } = organizationsStore()
 const { getLeadStatus } = statusesStore()
 
 const route = useRoute()
@@ -352,16 +354,17 @@ function getRow(name, field) {
 function effectiveRowKeys() {
   const base = leads.value?.data?.rows || []
   const vt = leads.value?.data?.view_type
-  if (
-    (vt === 'list' || vt === 'group_by') &&
-    !base.includes('_activities_todo')
-  ) {
-    const next = [...base]
+  if (vt !== 'list' && vt !== 'group_by') return base
+  const next = [...base]
+  if (!next.includes('_activities_todo')) {
     const pos = next.length ? 1 : 0
     next.splice(pos, 0, '_activities_todo')
-    return next
   }
-  return base
+  if (!next.includes('_activities_description')) {
+    const idx = next.indexOf('_activities_todo')
+    next.splice(idx === -1 ? 1 : idx + 1, 0, '_activities_description')
+  }
+  return next
 }
 
 // Rows
@@ -402,6 +405,25 @@ const columns = computed(() => {
       _columns.length > 0
         ? [_columns[0], actCol, ..._columns.slice(1)]
         : [actCol]
+  }
+
+  const actIdx = _columns.findIndex((c) => c.key === '_activities_todo')
+  if (
+    (vt === 'list' || vt === 'group_by') &&
+    actIdx !== -1 &&
+    !_columns.some((c) => c.key === '_activities_description')
+  ) {
+    const descCol = {
+      key: '_activities_description',
+      label: __('Activity description'),
+      type: 'Data',
+      width: '16rem',
+    }
+    _columns = [
+      ..._columns.slice(0, actIdx + 1),
+      descCol,
+      ..._columns.slice(actIdx + 1),
+    ]
   }
 
   // Set align right for last column
@@ -501,6 +523,12 @@ function parseRows(rows, columns = [], rowKeys = null) {
           image: lead.image,
           image_label: lead.first_name,
         }
+      } else if (row == 'company_name') {
+        const nm = lead.company_name || lead.organization || ''
+        _rows[row] = {
+          label: nm,
+          logo: nm ? getOrganization(nm)?.organization_logo : null,
+        }
       } else if (row == 'organization') {
         _rows[row] = lead.organization
       } else if (row === 'website') {
@@ -567,7 +595,17 @@ function parseRows(rows, columns = [], rowKeys = null) {
           open: lead._todo_open || 0,
           overdue: lead._todo_overdue || 0,
           due_today: lead._todo_due_today || 0,
+          nextFutureDate: lead._todo_next_future_date || null,
+          nextFutureLabel: lead._todo_next_future_date
+            ? timeAgo(lead._todo_next_future_date)
+            : '',
+          focalPriority: (lead._todo_focal_priority || '').trim(),
         }
+      } else if (row === '_activities_description') {
+        const t = (lead._todo_activity_description || '').trim()
+        _rows[row] = t
+          ? { text: t, fullText: t }
+          : { text: '', fullText: '' }
       }
     })
     _rows['_email_count'] = lead._email_count

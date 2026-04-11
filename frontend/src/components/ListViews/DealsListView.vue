@@ -153,12 +153,18 @@
             v-else-if="column.key === '_activities_todo' && item"
             :text="
               [
+                item.focalPriority
+                  ? `${__('Priority')}: ${item.focalPriority}`
+                  : '',
                 __('{0} open', [String(item.open || 0)]),
                 item.overdue
                   ? __('{0} overdue', [String(item.overdue)])
                   : '',
                 item.due_today
                   ? __('{0} due today', [String(item.due_today)])
+                  : '',
+                item.nextFutureLabel
+                  ? `${__('Next due')}: ${item.nextFutureLabel}`
                   : '',
               ]
                 .filter(Boolean)
@@ -170,20 +176,52 @@
               @click.stop.prevent="emit('openActivities', row.name)"
             >
               <TaskIcon class="h-4 w-4 shrink-0 text-sky-600" />
-              <span class="font-semibold text-ink-gray-9">{{
-                item.open || 0
-              }}</span>
+              <span class="font-semibold text-ink-gray-9">
+                {{ item.open || 0
+                }}<template
+                  v-if="
+                    item.focalPriority &&
+                    !item.overdue &&
+                    !item.due_today &&
+                    !item.nextFutureLabel
+                  "
+                  ><span class="text-sm font-medium text-ink-gray-7">
+                    ({{ __(item.focalPriority) }})</span
+                  ></template
+                >
+              </span>
               <span
                 v-if="item.overdue"
                 class="text-sm font-medium text-red-600"
               >
-                · {{ item.overdue }} {{ __('overdue') }}
+                · {{ item.overdue }} {{ __('overdue')
+                }}<template v-if="item.focalPriority">
+                  ({{ __(item.focalPriority) }})</template
+                >
               </span>
               <span
                 v-if="item.due_today"
                 class="text-sm font-medium text-amber-600"
               >
-                · {{ item.due_today }} {{ __('today') }}
+                · {{ item.due_today }} {{ __('today')
+                }}<template v-if="item.focalPriority && !item.overdue">
+                  ({{ __(item.focalPriority) }})</template
+                >
+              </span>
+              <span
+                v-if="item.nextFutureLabel"
+                class="text-sm font-medium text-green-600"
+              >
+                · {{ item.nextFutureLabel
+                }}<template
+                  v-if="
+                    item.focalPriority &&
+                    !item.overdue &&
+                    !item.due_today
+                  "
+                >
+                  ({{ __(item.focalPriority) }})</template
+                >
               </span>
             </div>
           </Tooltip>

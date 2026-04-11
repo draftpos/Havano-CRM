@@ -8,7 +8,7 @@ from frappe.desk.form.assign_to import set_status
 from frappe.desk.reportview import get_meta_and_docfield, is_standard
 from frappe.model import no_value_fields
 from frappe.model.document import get_controller
-from frappe.utils import getdate, make_filter_tuple, today
+from frappe.utils import getdate, make_filter_tuple, strip_html, today
 from pypika import Criterion
 
 from havano_crm.api.list_defaults import get_standard_kanban_settings, get_standard_list_data
@@ -663,8 +663,30 @@ def get_data(
 	}
 
 
+def _todo_plain_description(description) -> str:
+	if not description:
+		return ""
+	text = strip_html(str(description))
+	return (text or "").strip()
+
+
+def _focal_open_todo_for_list(ts: list, open_n: int, today_d) -> dict | None:
+	"""Pick one representative open ToDo for description / priority (worst overdue, else soonest dated, else first)."""
+	if open_n <= 0:
+		return None
+	if open_n == 1:
+		return ts[0]
+	overdue_tasks = [t for t in ts if t.date and getdate(t.date) < today_d]
+	if overdue_tasks:
+		return min(overdue_tasks, key=lambda t: getdate(t.date))
+	dated = [t for t in ts if t.date]
+	if dated:
+		return min(dated, key=lambda t: getdate(t.date))
+	return ts[0]
+
+
 def _enrich_reference_todo_summaries(rows: list, reference_doctype: str) -> None:
-	"""Attach open / overdue / due-today ToDo counts per Lead or Opportunity (list payload)."""
+	"""Attach open ToDo counts, next future due date, and list preview description per reference doc."""
 	if not rows or reference_doctype not in ("Lead", "Opportunity"):
 		return
 	names = [d.get("name") for d in rows if d.get("name")]
@@ -678,26 +700,42 @@ def _enrich_reference_todo_summaries(rows: list, reference_doctype: str) -> None
 			"reference_name": ("in", names),
 			"status": "Open",
 		},
-		fields=["reference_name", "date"],
+		fields=["reference_name", "date", "description", "priority"],
 	)
 
-	summary: dict[str, dict] = defaultdict(lambda: {"open": 0, "overdue": 0, "due_today": 0})
+	by_ref: dict[str, list] = defaultdict(list)
 	for t in todos:
-		rn = t.reference_name
-		summary[rn]["open"] += 1
-		dd = t.date
-		if dd:
-			d = getdate(dd)
-			if d < today_d:
-				summary[rn]["overdue"] += 1
-			elif d == today_d:
-				summary[rn]["due_today"] += 1
+		by_ref[t.reference_name].append(t)
+
 	for row in rows:
 		n = row.get("name")
-		s = summary.get(n, {"open": 0, "overdue": 0, "due_today": 0})
-		row["_todo_open"] = s["open"]
-		row["_todo_overdue"] = s["overdue"]
-		row["_todo_due_today"] = s["due_today"]
+		ts = by_ref.get(n, [])
+		open_n = len(ts)
+		overdue = 0
+		due_today = 0
+		future_dates: list = []
+		for t in ts:
+			dd = t.date
+			if not dd:
+				continue
+			d = getdate(dd)
+			if d < today_d:
+				overdue += 1
+			elif d == today_d:
+				due_today += 1
+			elif d > today_d:
+				future_dates.append(d)
+
+		next_future = min(future_dates) if future_dates else None
+		row["_todo_open"] = open_n
+		row["_todo_overdue"] = overdue
+		row["_todo_due_today"] = due_today
+		row["_todo_next_future_date"] = str(next_future) if next_future else None
+
+		focal = _focal_open_todo_for_list(ts, open_n, today_d)
+		desc = _todo_plain_description(focal.get("description")) if focal else ""
+		row["_todo_activity_description"] = (desc or "")[:400]
+		row["_todo_focal_priority"] = (focal.get("priority") or "").strip() if focal else ""
 
 
 def parse_list_data(data, doctype):

@@ -142,6 +142,7 @@
                   'communication',
                   'incoming_call',
                   'outgoing_call',
+                  'event',
                 ].includes(activity.activity_type),
               }"
             >
@@ -165,17 +166,21 @@
                   ) && activity.status == 'Busy'
                 "
               />
-              <component
-                :is="activity.icon"
-                v-else
-                :class="
-                  ['added', 'removed', 'changed'].includes(
-                    activity.activity_type,
-                  )
-                    ? 'text-ink-gray-4'
-                    : 'text-ink-gray-8'
-                "
-              />
+                <CalendarIcon
+                  v-else-if="activity.activity_type == 'event'"
+                  class="text-ink-gray-8"
+                />
+                <component
+                  :is="activity.icon"
+                  v-else
+                  :class="
+                    ['added', 'removed', 'changed'].includes(
+                      activity.activity_type,
+                    )
+                      ? 'text-ink-gray-4'
+                      : 'text-ink-gray-8'
+                  "
+                />
             </div>
           </div>
           <div
@@ -190,6 +195,40 @@
             class="mb-4"
           >
             <CommentArea :activity="activity" />
+          </div>
+          <div
+            v-else-if="activity.activity_type == 'event'"
+            :id="activity.name"
+            class="mb-4 flex flex-col gap-2 py-1.5"
+          >
+            <div class="flex items-center justify-stretch gap-2 text-base">
+              <div
+                class="inline-flex flex-wrap items-center gap-1.5 text-ink-gray-8"
+              >
+                <span class="font-medium">{{ activity.owner_name }}</span>
+                <span class="text-ink-gray-5">{{ __('scheduled an event') }}</span>
+                <span class="max-w-md truncate font-medium text-ink-gray-7">
+                  — {{ activity.event_subject || __('(no title)') }}
+                </span>
+              </div>
+              <div class="ml-auto whitespace-nowrap">
+                <Tooltip
+                  :text="
+                    activity.event_starts_on
+                      ? formatDate(activity.event_starts_on, '', true, false)
+                      : formatDate(activity.creation)
+                  "
+                >
+                  <div class="text-sm text-ink-gray-5">
+                    {{
+                      activity.event_starts_on
+                        ? formatDate(activity.event_starts_on, '', true, false)
+                        : __(timeAgo(activity.creation))
+                    }}
+                  </div>
+                </Tooltip>
+              </div>
+            </div>
           </div>
           <div
             v-else-if="activity.activity_type == 'attachment_log'"
@@ -604,11 +643,29 @@ function sendTemplate(template) {
 
 const replyMessage = ref({})
 
+function eventRowToActivity(e) {
+  return {
+    name: e.name,
+    activity_type: 'event',
+    creation: e.starts_on || e.creation,
+    owner: e.owner,
+    event_subject: e.subject,
+    event_starts_on: e.starts_on,
+    event_ends_on: e.ends_on,
+    is_lead: false,
+  }
+}
+
 function get_activities() {
-  if (!all_activities.data?.versions) return []
-  if (!all_activities.data?.calls.length)
-    return all_activities.data.versions || []
-  return [...all_activities.data.versions, ...all_activities.data.calls]
+  if (!all_activities.data) return []
+  const versions = all_activities.data.versions || []
+  const calls = all_activities.data.calls || []
+  const events = (all_activities.data.events || []).map(eventRowToActivity)
+  const merged = [...versions, ...calls, ...events]
+  if (!merged.length) return []
+  return merged.sort(
+    (a, b) => new Date(a.creation) - new Date(b.creation),
+  )
 }
 
 const activities = computed(() => {
@@ -648,6 +705,11 @@ const activities = computed(() => {
       activity.activity_type == 'communication'
     )
       return
+
+    if (activity.activity_type == 'event') {
+      activity.owner_name = getUser(activity.owner).full_name
+      return
+    }
 
     update_activities_details(activity)
 

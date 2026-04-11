@@ -539,6 +539,11 @@ function parseRows(rows, columns = [], rowKeys = null) {
           open: deal._todo_open || 0,
           overdue: deal._todo_overdue || 0,
           due_today: deal._todo_due_today || 0,
+          nextFutureDate: deal._todo_next_future_date || null,
+          nextFutureLabel: deal._todo_next_future_date
+            ? timeAgo(deal._todo_next_future_date)
+            : '',
+          focalPriority: (deal._todo_focal_priority || '').trim(),
         }
       }
     })

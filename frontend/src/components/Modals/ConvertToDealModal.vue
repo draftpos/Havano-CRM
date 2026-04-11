@@ -99,7 +99,7 @@ import { showQuickEntryModal, quickEntryProps } from '@/composables/modals'
 import { isMobileView } from '@/composables/settings'
 import { useOnboarding, useTelemetry } from 'frappe-ui/frappe'
 import { Switch, Dialog, createResource, call } from 'frappe-ui'
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
 const props = defineProps({
@@ -125,6 +125,28 @@ const { capture } = useTelemetry()
 
 const { triggerConvertToDeal } = useDocument('Lead', props.lead.name)
 const { document: deal } = useDocument('Opportunity')
+
+async function applyLeadConvertDefaults() {
+  if (!props.lead?.name) return
+  try {
+    const d = await call('havano_crm.api.opportunity.get_lead_convert_deal_defaults', {
+      lead: props.lead.name,
+    })
+    if (d && typeof d === 'object') {
+      Object.assign(deal.doc, d)
+    }
+  } catch {
+    /* user may still edit required fields */
+  }
+}
+
+watch(
+  () => [show.value, props.lead?.name],
+  async ([isOpen]) => {
+    if (!isOpen || !props.lead?.name) return
+    await applyLeadConvertDefaults()
+  },
+)
 
 async function convertToDeal() {
   error.value = ''

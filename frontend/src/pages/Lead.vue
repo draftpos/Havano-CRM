@@ -35,6 +35,7 @@
         </template>
       </Dropdown>
       <Button
+        v-if="canConvertToDeal"
         :label="__('Convert to Deal')"
         variant="solid"
         @click="showConvertToDealModal = true"
@@ -340,6 +341,8 @@ function onSideTaskUpdated() {
 }
 
 const doc = computed(() => document.doc || {})
+
+const canConvertToDeal = computed(() => doc.value?.status !== 'Converted')
 
 watch(error, (err) => {
   if (err) {
