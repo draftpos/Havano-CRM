@@ -74,6 +74,13 @@ after_migrate = [
 	"havano_crm.api.whatsapp.add_roles",
 ]
 
+fixtures = [
+	{
+		"dt": "Custom Field",
+		"filters": [["dt", "=", "Lead"]],
+	},
+]
+
 standard_dropdown_items = [
 	{
 		"name1": "app_selector",
