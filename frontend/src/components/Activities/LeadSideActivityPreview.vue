@@ -80,7 +80,10 @@
           </div>
         </template>
         <template v-else>
-          <div class="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center text-sky-600">
+          <div
+            class="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md"
+            :class="previewOpenTodoIconWrapClass(item.task)"
+          >
             <TaskIcon class="h-3.5 w-3.5" />
           </div>
           <div class="min-w-0 flex-1 cursor-pointer" @click="taskActions?.edit?.(item.task)">
@@ -104,32 +107,39 @@
               </span>
             </div>
           </div>
-          <div
-            v-if="showTodoQuickActions(item.task)"
-            class="flex shrink-0 items-start gap-0.5 pt-0.5"
-            @click.stop
-          >
-            <Button
-              variant="ghost"
-              class="!h-7 !min-h-0 !px-1.5"
-              :tooltip="__('Edit')"
-              icon="edit-2"
-              @click="onEditTask(item.task)"
+          <div class="flex shrink-0 items-stretch gap-2 pt-0.5">
+            <div
+              v-if="previewOpenTodoAccent(item.task)"
+              class="w-1 shrink-0 self-stretch rounded-full min-h-[2.75rem]"
+              :class="previewOpenTodoAccentBarClass(item.task)"
             />
-            <Button
-              variant="ghost"
-              class="!h-7 !min-h-0 !px-1.5"
-              :tooltip="__('Mark as done')"
-              icon="check"
-              @click="onMarkDone(item.task)"
-            />
-            <Button
-              variant="ghost"
-              class="!h-7 !min-h-0 !px-1.5"
-              :tooltip="__('Cancel')"
-              icon="x"
-              @click="onCancelTask(item.task)"
-            />
+            <div
+              v-if="showTodoQuickActions(item.task)"
+              class="flex shrink-0 items-start gap-0.5"
+              @click.stop
+            >
+              <Button
+                variant="ghost"
+                class="!h-7 !min-h-0 !px-1.5"
+                :tooltip="__('Edit')"
+                icon="edit-2"
+                @click="onEditTask(item.task)"
+              />
+              <Button
+                variant="ghost"
+                class="!h-7 !min-h-0 !px-1.5"
+                :tooltip="__('Mark as done')"
+                icon="check"
+                @click="onMarkDone(item.task)"
+              />
+              <Button
+                variant="ghost"
+                class="!h-7 !min-h-0 !px-1.5"
+                :tooltip="__('Cancel')"
+                icon="x"
+                @click="onCancelTask(item.task)"
+              />
+            </div>
           </div>
         </template>
       </li>
@@ -277,13 +287,56 @@ function previewTaskDueSegment(task) {
   const d = task.date || task.due_date
   if (!d) return ''
   const formatted = dayjs(d).format('DD/MM/YYYY')
-  if (previewTaskStatusGroup(task.status) === 'done') return formatted
-  const due = dayjs(d).format('YYYY-MM-DD')
-  const today = dayjs().format('YYYY-MM-DD')
-  if (due < today) {
-    return `${formatted}(${__('overdue')})`
+  if (previewTaskStatusGroup(task.status) === 'done') {
+    return formatted
   }
-  return formatted
+  const due = dayjs(d).startOf('day')
+  const today = dayjs().startOf('day')
+  const diff = due.diff(today, 'day')
+  if (diff < 0) {
+    return `${formatted} (${__('overdue')})`
+  }
+  if (diff === 0) {
+    return `${formatted} (${__('today')})`
+  }
+  if (diff === 1) {
+    return `${formatted} (${__('in 1 day')})`
+  }
+  return `${formatted} (${__('in {0} days', [String(diff)])})`
+}
+
+function previewOpenTodoAccent(task) {
+  return showTodoQuickActions(task)
+}
+
+/** Right-edge color for open todos: urgency from due date. */
+function previewOpenTodoAccentBarClass(task) {
+  const d = task.date || task.due_date
+  if (!d) return 'bg-sky-500'
+  const due = dayjs(d).startOf('day')
+  const today = dayjs().startOf('day')
+  const diff = due.diff(today, 'day')
+  if (diff < 0) return 'bg-red-500'
+  if (diff === 0) return 'bg-amber-500'
+  if (diff <= 3) return 'bg-orange-400'
+  if (diff <= 7) return 'bg-yellow-500'
+  return 'bg-emerald-500'
+}
+
+function previewOpenTodoIconWrapClass(task) {
+  if (!previewOpenTodoAccent(task)) {
+    return 'text-sky-600'
+  }
+  const d = task.date || task.due_date
+  if (!d) return 'bg-sky-100 text-sky-700'
+  const due = dayjs(d).startOf('day')
+  const today = dayjs().startOf('day')
+  const diff = due.diff(today, 'day')
+  if (diff < 0) return 'bg-red-100 text-red-700'
+  if (diff === 0) return 'bg-amber-100 text-amber-800'
+  if (diff <= 3) return 'bg-orange-100 text-orange-800'
+  if (diff <= 7) return 'bg-yellow-100 text-yellow-800'
+  return 'bg-emerald-100 text-emerald-800'
 }
 
 function noteTitle(note) {

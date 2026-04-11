@@ -161,23 +161,26 @@ function taskDueDateRaw(task) {
   return task.date || task.due_date || null
 }
 
-function taskIsOverdue(task) {
-  const d = taskDueDateRaw(task)
-  if (!d) return false
-  if (statusGroup(task.status) === 'done') return false
-  const due = dayjs(d).format('YYYY-MM-DD')
-  const today = dayjs().format('YYYY-MM-DD')
-  return due < today
-}
-
 function taskDueSegment(task) {
   const d = taskDueDateRaw(task)
   if (!d) return ''
   const formatted = dayjs(d).format('DD/MM/YYYY')
-  if (taskIsOverdue(task)) {
-    return `${formatted}(${__('overdue')})`
+  if (statusGroup(task.status) === 'done') {
+    return formatted
   }
-  return formatted
+  const due = dayjs(d).startOf('day')
+  const today = dayjs().startOf('day')
+  const diff = due.diff(today, 'day')
+  if (diff < 0) {
+    return `${formatted} (${__('overdue')})`
+  }
+  if (diff === 0) {
+    return `${formatted} (${__('today')})`
+  }
+  if (diff === 1) {
+    return `${formatted} (${__('in 1 day')})`
+  }
+  return `${formatted} (${__('in {0} days', [String(diff)])})`
 }
 
 const groupedTasks = computed(() => {

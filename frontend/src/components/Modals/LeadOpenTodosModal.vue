@@ -113,12 +113,19 @@ function assigneeLabel(t) {
 function openTodoDueSegment(t) {
   if (!t.date) return ''
   const formatted = dayjs(t.date).format('DD/MM/YYYY')
-  const due = dayjs(t.date).format('YYYY-MM-DD')
-  const today = dayjs().format('YYYY-MM-DD')
-  if (due < today) {
-    return `${formatted}(${__('overdue')})`
+  const due = dayjs(t.date).startOf('day')
+  const today = dayjs().startOf('day')
+  const diff = due.diff(today, 'day')
+  if (diff < 0) {
+    return `${formatted} (${__('overdue')})`
   }
-  return formatted
+  if (diff === 0) {
+    return `${formatted} (${__('today')})`
+  }
+  if (diff === 1) {
+    return `${formatted} (${__('in 1 day')})`
+  }
+  return `${formatted} (${__('in {0} days', [String(diff)])})`
 }
 
 async function load() {
