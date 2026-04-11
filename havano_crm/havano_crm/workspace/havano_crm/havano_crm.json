@@ -1,0 +1,50 @@
+{
+ "charts": [],
+ "content": "[{\"id\":\"Eu0IXK5fqv\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\">Havano CRM</span>\",\"col\":12}},{\"id\":\"H8CGqpb9Qp\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"CRM Page\",\"col\":3}},{\"id\":\"zfEfXS7ok-\",\"type\":\"spacer\",\"data\":{\"col\":12}},{\"id\":\"_agf4UHt_m\",\"type\":\"number_card\",\"data\":{\"number_card_name\":\"New Lead (Last 1 Month)\",\"col\":4}},{\"id\":\"w8Cm4k92IX\",\"type\":\"number_card\",\"data\":{\"number_card_name\":\"Open Opportunity\",\"col\":4}},{\"id\":\"vDdHRw1dL8\",\"type\":\"number_card\",\"data\":{\"number_card_name\":\"New Opportunity (Last 1 Month)\",\"col\":4}}]",
+ "creation": "2026-04-11 12:58:57.933509",
+ "custom_blocks": [],
+ "docstatus": 0,
+ "doctype": "Workspace",
+ "for_user": "",
+ "hide_custom": 0,
+ "icon": "clap",
+ "idx": 0,
+ "indicator_color": "green",
+ "is_hidden": 0,
+ "label": "Havano CRM",
+ "links": [],
+ "modified": "2026-04-11 13:07:49.103657",
+ "modified_by": "francis@gmail.com",
+ "module": "Havano CRM",
+ "name": "Havano CRM",
+ "number_cards": [
+  {
+   "label": "New Lead (Last 1 Month)",
+   "number_card_name": "New Lead (Last 1 Month)"
+  },
+  {
+   "label": "Open Opportunity",
+   "number_card_name": "Open Opportunity"
+  },
+  {
+   "label": "New Opportunity (Last 1 Month)",
+   "number_card_name": "New Opportunity (Last 1 Month)"
+  }
+ ],
+ "owner": "francis@gmail.com",
+ "parent_page": "",
+ "public": 1,
+ "quick_lists": [],
+ "roles": [],
+ "sequence_id": 7.0,
+ "shortcuts": [
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "CRM Page",
+   "type": "URL",
+   "url": "/havano-crm/dashboard"
+  }
+ ],
+ "title": "Havano CRM"
+}
