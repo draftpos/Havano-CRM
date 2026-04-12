@@ -18,6 +18,11 @@ const routes = [
     name: 'Dashboard',
     component: () => import('@/pages/Dashboard.vue'),
   },
+  /** Desk / legacy links used app_icon_route "/havano_crm" → browser path /havano-crm/havano_crm */
+  {
+    path: '/havano_crm',
+    redirect: { name: 'Dashboard' },
+  },
   {
     alias: '/leads',
     path: '/leads/view/:viewType?',
