@@ -6,14 +6,14 @@ app_email = "admin@havano.local"
 app_license = "agpl-3.0"
 app_icon_url = "/assets/havano_crm/images/logo.svg"
 app_icon_title = "Havano CRM"
-app_icon_route = "/havano_crm"
+app_icon_route = "/havano-crm/dashboard"
 
 add_to_apps_screen = [
 	{
 		"name": "havano_crm",
 		"logo": "/assets/havano_crm/images/logo.svg",
 		"title": "Havano CRM",
-		"route": "/havano_crm",
+		"route": "/havano-crm/dashboard",
 		"has_permission": "havano_crm.api.check_app_permission",
 	}
 ]
