@@ -4,7 +4,11 @@ export const filterableFields = createResource({
   url: 'havano_crm.api.doc.get_filterable_fields',
   transform: (data) => {
     data = data
-      .filter((field) => !field.fieldname.startsWith('_'))
+      .filter(
+        (field) =>
+          !field.fieldname.startsWith('_') ||
+          field.fieldname.startsWith('_todo_'),
+      )
       .map((field) => {
         return {
           label: field.label,

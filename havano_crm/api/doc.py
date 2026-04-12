@@ -1,5 +1,6 @@
 import json
 from collections import defaultdict
+from datetime import date as date_cls
 
 import frappe
 from frappe import _
@@ -9,6 +10,7 @@ from frappe.desk.reportview import get_meta_and_docfield, is_standard
 from frappe.model import no_value_fields
 from frappe.model.document import get_controller
 from frappe.utils import getdate, make_filter_tuple, strip_html, today
+from frappe.utils.data import get_timespan_date_range
 from pypika import Criterion
 
 from havano_crm.api.list_defaults import get_standard_kanban_settings, get_standard_list_data
@@ -92,6 +94,348 @@ def _sanitize_list_rows_and_columns(doctype: str, rows: list, columns: list | No
 	return clean_rows, clean_columns
 
 
+# --- Lead list: open ToDo virtual fields (filter/sort; not DB columns on Lead) ---
+LEAD_TODO_VIRTUAL_FIELDS = frozenset(
+	{
+		"_todo_focal_due_date",
+		"_todo_focal_priority",
+		"_todo_open",
+		"_todo_activity_description",
+	}
+)
+
+_TODO_PRIORITY_RANK = {"": 0, "Low": 1, "Medium": 2, "High": 3, "Urgent": 4}
+
+
+def _split_lead_todo_virtual_filters(filters):
+	"""Return (base_filters, todo_virtual_filters)."""
+	if not filters:
+		return frappe._dict(), {}
+	base = frappe._dict(dict(filters))
+	todo = {}
+	for k in list(base.keys()):
+		if k in LEAD_TODO_VIRTUAL_FIELDS:
+			todo[k] = base.pop(k)
+	return base, todo
+
+
+def _lead_todo_virtual_needed(filters, order_by: str | None) -> bool:
+	_, todo = _split_lead_todo_virtual_filters(filters)
+	if todo:
+		return True
+	if not order_by or not str(order_by).strip():
+		return False
+	for part in str(order_by).split(","):
+		field = part.strip().split()[0].strip("`")
+		if field in LEAD_TODO_VIRTUAL_FIELDS:
+			return True
+	return False
+
+
+def _parse_order_by_clauses(order_by: str) -> list[tuple[str, str]]:
+	out = []
+	for part in str(order_by or "").split(","):
+		p = part.strip()
+		if not p:
+			continue
+		toks = p.split()
+		if len(toks) == 1:
+			out.append((toks[0].strip("`"), "asc"))
+		else:
+			out.append((toks[0].strip("`"), toks[-1].lower() if toks[-1].lower() in ("asc", "desc") else "asc"))
+	return out
+
+
+def _compute_lead_todo_metrics_map(names: list[str]) -> dict[str, dict]:
+	"""Per-lead open ToDo metrics (same focal rule as list enrichment)."""
+	empty = {
+		"_todo_open": 0,
+		"_todo_focal_due_date": None,
+		"_todo_focal_priority": "",
+		"_todo_activity_description": "",
+	}
+	out = {n: dict(empty) for n in names}
+	if not names:
+		return out
+	today_d = getdate(today())
+	todos = frappe.get_all(
+		"ToDo",
+		filters={
+			"reference_type": "Lead",
+			"reference_name": ("in", names),
+			"status": "Open",
+		},
+		fields=["reference_name", "date", "description", "priority"],
+	)
+	by_ref: dict[str, list] = defaultdict(list)
+	for t in todos:
+		by_ref[t.reference_name].append(t)
+	for n in names:
+		ts = by_ref.get(n, [])
+		open_n = len(ts)
+		focal = _focal_open_todo_for_list(ts, open_n, today_d)
+		desc = _todo_plain_description(focal.get("description")) if focal else ""
+		fd = getdate(focal["date"]) if focal and focal.get("date") else None
+		out[n] = {
+			"_todo_open": open_n,
+			"_todo_focal_due_date": fd,
+			"_todo_focal_priority": (focal.get("priority") or "").strip() if focal else "",
+			"_todo_activity_description": (desc or "")[:400],
+		}
+	return out
+
+
+def _lead_virtual_field_is_set(m: dict, field: str) -> bool:
+	if field == "_todo_focal_due_date":
+		return m.get("_todo_focal_due_date") is not None
+	if field == "_todo_open":
+		return (m.get("_todo_open") or 0) > 0
+	if field in ("_todo_focal_priority", "_todo_activity_description"):
+		return bool((m.get(field) or "").strip())
+	return False
+
+
+def _lead_todo_like_match(hay: str, pattern: str) -> bool:
+	if pattern is None:
+		return True
+	hay = (hay or "").lower()
+	pat = (pattern or "").lower()
+	if not pat:
+		return True
+	core = pat.strip("%")
+	return core in hay
+
+
+def _lead_todo_filter_one(m: dict, field: str, fval) -> bool:
+	if field not in LEAD_TODO_VIRTUAL_FIELDS:
+		return True
+	if not isinstance(fval, (list, tuple)):
+		if field == "_todo_open":
+			return (m.get("_todo_open") or 0) == int(fval)
+		if field == "_todo_focal_priority":
+			return (m.get("_todo_focal_priority") or "") == str(fval)
+		if field == "_todo_activity_description":
+			return _lead_todo_like_match(m.get("_todo_activity_description") or "", f"%{fval}%")
+		if field == "_todo_focal_due_date":
+			fd = m.get("_todo_focal_due_date")
+			return fd is not None and fd == getdate(fval)
+		return True
+
+	op, val = fval[0], fval[1]
+	op_l = str(op).lower()
+	op_u = str(op).upper()
+
+	if op_l == "timespan" and field == "_todo_focal_due_date":
+		fd = m.get("_todo_focal_due_date")
+		if not fd:
+			return False
+		rng = get_timespan_date_range(val)
+		if not rng:
+			return False
+		start, end = rng
+		d = fd if isinstance(fd, date_cls) else getdate(fd)
+		return getdate(start.date()) <= d <= getdate(end.date())
+
+	if op_l in ("is", "is not"):
+		has = _lead_virtual_field_is_set(m, field)
+		want_set = str(val).lower() == "set"
+		want_unset = str(val).lower() in ("not set", "not_set")
+		if op_l == "is":
+			if want_set:
+				return has
+			if want_unset:
+				return not has
+		else:
+			if want_set:
+				return not has
+			if want_unset:
+				return has
+		return True
+
+	if field == "_todo_activity_description":
+		text = m.get("_todo_activity_description") or ""
+		if op_u == "LIKE":
+			return _lead_todo_like_match(text, val)
+		if op_u == "NOT LIKE":
+			return not _lead_todo_like_match(text, val)
+		if op_l == "=":
+			return text == (val or "")
+		if op_l == "!=":
+			return text != (val or "")
+		return True
+
+	if field == "_todo_focal_priority":
+		p = (m.get("_todo_focal_priority") or "").strip()
+		if op_l == "=":
+			return p == str(val)
+		if op_l == "!=":
+			return p != str(val)
+		if op_l == "in":
+			return p in (list(val) if isinstance(val, (list, tuple)) else [val])
+		if op_l == "not in":
+			return p not in (list(val) if isinstance(val, (list, tuple)) else [val])
+		return True
+
+	if field == "_todo_open":
+		n = int(m.get("_todo_open") or 0)
+		try:
+			cmp_v = int(val)
+		except (TypeError, ValueError):
+			return True
+		if op_l == "=":
+			return n == cmp_v
+		if op_l == "!=":
+			return n != cmp_v
+		if op_l == ">":
+			return n > cmp_v
+		if op_l == "<":
+			return n < cmp_v
+		if op_l == ">=":
+			return n >= cmp_v
+		if op_l == "<=":
+			return n <= cmp_v
+		if op_l == "in":
+			return n in (list(val) if isinstance(val, (list, tuple)) else [val])
+		if op_l == "not in":
+			return n not in (list(val) if isinstance(val, (list, tuple)) else [val])
+		return True
+
+	if field == "_todo_focal_due_date":
+		fd = m.get("_todo_focal_due_date")
+		if op_l == "between" and isinstance(val, (list, tuple)) and len(val) >= 2:
+			if fd is None:
+				return False
+			d1, d2 = getdate(val[0]), getdate(val[1])
+			return d1 <= fd <= d2
+		if fd is None:
+			if op_l == "=":
+				return val is None or val == ""
+			if op_l == "!=":
+				return val is not None and val != ""
+			return False
+		if op_l == "=":
+			return fd == getdate(val)
+		if op_l == "!=":
+			return fd != getdate(val)
+		if op_l == ">":
+			return fd > getdate(val)
+		if op_l == "<":
+			return fd < getdate(val)
+		if op_l == ">=":
+			return fd >= getdate(val)
+		if op_l == "<=":
+			return fd <= getdate(val)
+		return True
+
+	return True
+
+
+def _lead_todo_filters_pass(m: dict, todo_filters: dict) -> bool:
+	for k, v in todo_filters.items():
+		if not _lead_todo_filter_one(m, k, v):
+			return False
+	return True
+
+
+def _lead_fetch_all_names(base_filters: frappe._dict) -> list[str]:
+	"""All Lead names matching base filters (permissions), batched."""
+	all_names: list[str] = []
+	start = 0
+	batch_size = 800
+	while True:
+		batch = frappe.get_list(
+			"Lead",
+			filters=base_filters,
+			pluck="name",
+			limit_start=start,
+			limit_page_length=batch_size,
+		)
+		if not batch:
+			break
+		all_names.extend(batch)
+		if len(batch) < batch_size:
+			break
+		start += batch_size
+	return all_names
+
+
+def _lead_sort_merged_rows(merged: list[dict], clauses: list[tuple[str, str]]):
+	"""Stable multi-sort: apply least-significant clause first (reversed order)."""
+	for field, direc in reversed(clauses):
+		desc = direc.lower() == "desc"
+		if field == "_todo_activity_description":
+			merged.sort(
+				key=lambda r: (r.get("_todo_activity_description") or "").lower(),
+				reverse=desc,
+			)
+			continue
+		if field not in LEAD_TODO_VIRTUAL_FIELDS:
+			merged.sort(key=lambda r, f=field: r.get(f), reverse=desc)
+			continue
+
+		def sort_key(r, f=field, d=desc):
+			if f == "_todo_focal_due_date":
+				fd = r.get("_todo_focal_due_date")
+				if fd is None:
+					return (1, 0)
+				di = fd if isinstance(fd, date_cls) else getdate(fd)
+				o = di.toordinal()
+				return (0, -o) if d else (0, o)
+			if f == "_todo_open":
+				v = int(r.get("_todo_open") or 0)
+				return (0, -v) if d else (0, v)
+			if f == "_todo_focal_priority":
+				pr = _TODO_PRIORITY_RANK.get((r.get("_todo_focal_priority") or "").strip(), 99)
+				return (0, -pr) if d else (0, pr)
+			return (0, 0)
+
+		merged.sort(key=sort_key)
+
+
+def _lead_get_list_with_todo_virtual(
+	base_filters: frappe._dict,
+	todo_filters: dict,
+	order_by: str,
+	rows: list,
+	page_length: int,
+):
+	"""Resolve Lead list when filtering/sorting by open ToDo virtual fields."""
+	all_names = _lead_fetch_all_names(base_filters)
+	metrics_map = _compute_lead_todo_metrics_map(all_names)
+	filtered_names = [n for n in all_names if _lead_todo_filters_pass(metrics_map[n], todo_filters)]
+	clauses = _parse_order_by_clauses(order_by)
+	extra_fields = {f for f, _ in clauses if f not in LEAD_TODO_VIRTUAL_FIELDS and f != "name"}
+	docs = []
+	if filtered_names:
+		docs = frappe.get_list(
+			"Lead",
+			filters={"name": ("in", filtered_names)},
+			fields=["name", *sorted(extra_fields)],
+			limit_page_length=len(filtered_names),
+		)
+	doc_by_name = {d["name"]: d for d in docs}
+	merged = []
+	for n in filtered_names:
+		d = doc_by_name.get(n) or {"name": n}
+		m = metrics_map.get(n) or {}
+		merged.append({**d, **m})
+	_lead_sort_merged_rows(merged, clauses)
+	total = len(merged)
+	slice_rows = merged[: max(1, int(page_length or 20))]
+	page_names = [r["name"] for r in slice_rows]
+	if not page_names:
+		return [], total
+	data = frappe.get_list(
+		"Lead",
+		filters={"name": ("in", page_names)},
+		fields=rows,
+		limit_page_length=len(page_names),
+	)
+	order_index = {n: i for i, n in enumerate(page_names)}
+	data.sort(key=lambda d: order_index.get(d.get("name"), 10**9))
+	return data, total
+
+
 @frappe.whitelist()
 def sort_options(doctype: str):
 	fields = frappe.get_meta(doctype).fields
@@ -118,6 +462,15 @@ def sort_options(doctype: str):
 		field["label"] = _(field["label"])
 		field["value"] = field["fieldname"]
 		fields.append(field)
+
+	if doctype == "Lead":
+		for vf in (
+			{"label": _("Todo due date"), "value": "_todo_focal_due_date", "fieldname": "_todo_focal_due_date"},
+			{"label": _("Todo priority"), "value": "_todo_focal_priority", "fieldname": "_todo_focal_priority"},
+			{"label": _("Open activities"), "value": "_todo_open", "fieldname": "_todo_open"},
+			{"label": _("Activity description"), "value": "_todo_activity_description", "fieldname": "_todo_activity_description"},
+		):
+			fields.append(vf)
 
 	return fields
 
@@ -185,6 +538,41 @@ def get_filterable_fields(doctype: str):
 	for field in res:
 		field["label"] = _(field.get("label"))
 		field["value"] = field.get("fieldname")
+
+	if doctype == "Lead":
+		res.extend(
+			[
+				{
+					"fieldname": "_todo_focal_due_date",
+					"fieldtype": "Date",
+					"label": _("Todo due date"),
+					"name": "_todo_focal_due_date",
+					"value": "_todo_focal_due_date",
+				},
+				{
+					"fieldname": "_todo_focal_priority",
+					"fieldtype": "Select",
+					"label": _("Todo priority"),
+					"options": "Low\nMedium\nHigh\nUrgent",
+					"name": "_todo_focal_priority",
+					"value": "_todo_focal_priority",
+				},
+				{
+					"fieldname": "_todo_open",
+					"fieldtype": "Int",
+					"label": _("Open activities"),
+					"name": "_todo_open",
+					"value": "_todo_open",
+				},
+				{
+					"fieldname": "_todo_activity_description",
+					"fieldtype": "Data",
+					"label": _("Activity description"),
+					"name": "_todo_activity_description",
+					"value": "_todo_activity_description",
+				},
+			]
+		)
 
 	return res
 
@@ -399,8 +787,15 @@ def get_data(
 		default_filters = frappe.parse_json(default_filters)
 		filters.update(default_filters)
 
+	# Open-todo virtual filters are list/group_by SQL only; strip elsewhere (e.g. kanban).
+	if doctype == "Lead" and view_type and view_type not in ("list", "group_by"):
+		for k in list(filters.keys()):
+			if k in LEAD_TODO_VIRTUAL_FIELDS:
+				filters.pop(k, None)
+
 	is_default = True
 	data = []
+	list_total_override = None
 	_list = get_controller(doctype)
 	list_payload = _resolved_list_payload(_list, doctype)
 	default_rows = (list_payload or {}).get("rows") or []
@@ -468,17 +863,24 @@ def get_data(
 
 		rows, columns = _sanitize_list_rows_and_columns(doctype, rows, columns)
 
-		data = (
-			frappe.get_list(
-				doctype,
-				fields=rows,
-				filters=filters,
-				order_by=order_by,
-				page_length=page_length,
+		if doctype == "Lead" and _lead_todo_virtual_needed(filters, order_by):
+			base_f, todo_f = _split_lead_todo_virtual_filters(filters)
+			data, list_total_override = _lead_get_list_with_todo_virtual(
+				base_f, todo_f, order_by, rows, page_length
 			)
-			or []
-		)
-		data = parse_list_data(data, doctype)
+			data = parse_list_data(data, doctype)
+		else:
+			data = (
+				frappe.get_list(
+					doctype,
+					fields=rows,
+					filters=filters,
+					order_by=order_by,
+					page_length=page_length,
+				)
+				or []
+			)
+			data = parse_list_data(data, doctype)
 
 	if view_type == "kanban":
 		if not rows:
@@ -655,7 +1057,11 @@ def get_data(
 		"page_length_count": page_length_count,
 		"is_default": is_default,
 		"views": get_views(doctype),
-		"total_count": frappe.get_list(doctype, filters=filters, fields=[COUNT_NAME])[0].total_count,
+		"total_count": (
+			list_total_override
+			if list_total_override is not None
+			else frappe.get_list(doctype, filters=filters, fields=[COUNT_NAME])[0].total_count
+		),
 		"row_count": len(data),
 		"form_script": get_form_script(doctype),
 		"list_script": get_form_script(doctype, "List"),
@@ -736,6 +1142,7 @@ def _enrich_reference_todo_summaries(rows: list, reference_doctype: str) -> None
 		desc = _todo_plain_description(focal.get("description")) if focal else ""
 		row["_todo_activity_description"] = (desc or "")[:400]
 		row["_todo_focal_priority"] = (focal.get("priority") or "").strip() if focal else ""
+		row["_todo_focal_due_date"] = str(focal.get("date")) if focal and focal.get("date") else None
 
 
 def parse_list_data(data, doctype):
